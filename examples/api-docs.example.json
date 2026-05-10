@@ -1,0 +1,131 @@
+{
+  "_comment": "api-docs.json 示例——doc-writeback 阶段 AI 自动生成,展示完整字段结构。新增字段 endpoint_key + rules[] 用于平台 api-kb 三方对齐。模块开发者通常不手写此文件,但可以参考字段含义。",
+  "module": "user",
+  "module_title": "用户模块",
+  "apis": [
+    {
+      "method": "POST",
+      "path": "/api/login",
+      "endpoint_key": "POST /api/login",
+      "title": "登录",
+      "description": "用户名密码登录,返回 session token",
+      "auth": "public",
+      "params": [
+        {
+          "name": "username",
+          "type": "string",
+          "required": true,
+          "constraint": "4-16 字母数字",
+          "description": "账号"
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "required": true,
+          "constraint": "8-64 字符",
+          "description": "密码"
+        }
+      ],
+      "request_example": {
+        "username": "alice",
+        "password": "secret123"
+      },
+      "response": {
+        "description": "登录成功返回 token",
+        "data_type": "object",
+        "fields": [
+          { "name": "token", "type": "string", "description": "会话 token,后续请求带 X-User-Token" },
+          { "name": "expires_at", "type": "number", "description": "过期时间戳(秒)" }
+        ],
+        "error_codes": [
+          { "status": 1001, "msg": "账号或密码错误" },
+          { "status": 1002, "msg": "账号已被禁用" }
+        ]
+      },
+      "response_example": {
+        "status": 0,
+        "data": {
+          "token": "abcd1234efgh5678",
+          "expires_at": 1735689600
+        },
+        "msg": ""
+      },
+      "rules": [
+        {
+          "category": "business",
+          "title": "同一用户最多 5 个并发会话",
+          "body": "登录成功时若已有 ≥5 个有效会话,踢掉最早的一个;客户端会通过 WS 收到 auth.kicked_by_other_device 事件后被强制下线。",
+          "code_loc": "main.go:42-78"
+        },
+        {
+          "category": "security",
+          "title": "密码用 bcrypt cost=12 存储",
+          "body": "永不明文存,登录校验时用 bcrypt.CompareHashAndPassword;切换 cost 不影响存量(每条 hash 自带 cost 标签)。",
+          "code_loc": "main.go:120-135"
+        },
+        {
+          "category": "error",
+          "title": "禁用账号直接拒绝,不暴露密码是否对",
+          "body": "is_banned=true 的账号一律返回 1002,不走密码 hash 校验路径(防 timing attack 暴露存在性)。",
+          "code_loc": "main.go:55-65"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/me",
+      "endpoint_key": "GET /api/me",
+      "title": "当前用户",
+      "description": "返回当前登录用户的基础信息",
+      "auth": "login",
+      "params": [],
+      "response": {
+        "description": "用户信息",
+        "data_type": "object",
+        "fields": [
+          { "name": "user_id", "type": "string", "description": "用户 UUID" },
+          { "name": "username", "type": "string", "description": "账号" },
+          {
+            "_comment": "嵌套对象示例——type=object + fields[] 递归展开",
+            "name": "profile",
+            "type": "object",
+            "description": "档案",
+            "fields": [
+              { "name": "nickname", "type": "string", "description": "昵称" },
+              { "name": "avatar_url", "type": "string", "description": "头像 URL" }
+            ]
+          },
+          {
+            "_comment": "数组对象示例——type=array + fields[] 表示 items 是 object;若 items 是标量改写 item_type:'string'",
+            "name": "roles",
+            "type": "array",
+            "description": "角色列表",
+            "fields": [
+              { "name": "role_id", "type": "integer", "description": "角色 ID" },
+              { "name": "role_name", "type": "string", "description": "角色名" }
+            ]
+          }
+        ],
+        "error_codes": [
+          { "status": 1003, "msg": "未登录或会话已过期" }
+        ]
+      },
+      "response_example": {
+        "status": 0,
+        "data": {
+          "user_id": "u-abc-123",
+          "username": "alice",
+          "profile": {
+            "nickname": "Alice",
+            "avatar_url": "https://cdn.example.com/u/abc.png"
+          },
+          "roles": [
+            { "role_id": 1, "role_name": "admin" },
+            { "role_id": 2, "role_name": "editor" }
+          ]
+        },
+        "msg": ""
+      }
+    }
+  ]
+}
