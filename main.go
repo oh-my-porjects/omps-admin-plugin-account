@@ -26,7 +26,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // PluginContext 由 Runtime 提供的共享资源
@@ -145,10 +148,17 @@ func handleAdminPing(w http.ResponseWriter, r *http.Request) {
 // 所有 HTTP 路由通过顶层 Routes 全局变量声明。
 type AdminAccountPlugin struct {
 	db             *sql.DB
+	rdb            *redis.Client
 	logger         *slog.Logger
 	lifecycleCtx   context.Context
 	registerWorker func() func()
 	isUnloading    func() bool
+	mu             sync.Mutex
+	accounts       map[string]accountRecord
+	roles          map[string][]string
+	sessionTTL     time.Duration
+	adminAPIKey    string
+	runtimeAddr    string
 
 	// WebSocket 推送 API 缓存（来自 PluginContext，业务函数想主动给客户端发消息时调）
 	push      func(ctx context.Context, userID, code string, data any) (int64, error)
