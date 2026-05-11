@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -118,6 +119,14 @@ var Plugin = &AdminAccountPlugin{}
 // 原因：Runtime 用全局 ServeMux 按路径精确分发请求。如果插件写
 // ServeHTTP 或内部 mux，多个插件之间会互相拦截请求导致 404。
 var Routes = map[string]http.HandlerFunc{
+	"POST /api/admin-account/login":            handleLogin,
+	"GET /api/admin-account/me":                handleMe,
+	"POST /api/admin-account/create":           handleAccountCreate,
+	"GET /api/admin-account/list":              handleAccountList,
+	"GET /api/admin-account/detail":            handleAccountDetail,
+	"PUT /api/admin-account/update":            handleAccountUpdate,
+	"PUT /api/admin-account/reset-password":    handleResetPassword,
+	"POST /api/admin-account/check-permission": handleCheckPermission,
 	// 前台接口示例（以 /api/ 开头）
 	"GET /api/admin_account/hello": handleHello,
 	// 后台管理接口示例（以 /{admin_prefix}/api/ 开头，部署时替换为项目 UUID）
@@ -133,6 +142,38 @@ func handleHello(w http.ResponseWriter, r *http.Request) {
 
 func handleAdminPing(w http.ResponseWriter, r *http.Request) {
 	Plugin.handleAdminPing(w, r)
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleLogin(w, r)
+}
+
+func handleMe(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleMe(w, r)
+}
+
+func handleAccountCreate(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleAccountCreate(w, r)
+}
+
+func handleAccountList(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleAccountList(w, r)
+}
+
+func handleAccountDetail(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleAccountDetail(w, r)
+}
+
+func handleAccountUpdate(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleAccountUpdate(w, r)
+}
+
+func handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleResetPassword(w, r)
+}
+
+func handleCheckPermission(w http.ResponseWriter, r *http.Request) {
+	Plugin.handleCheckPermission(w, r)
 }
 
 // AdminAccountPlugin 实现 GamePlugin 接口
@@ -171,6 +212,8 @@ type AdminAccountPlugin struct {
 // 本地 go test 拿到的是 "dev"；线上 runtime 加载后调 Version() 拿到的是本次部署 tag。
 var version = "dev"
 
+func main() {}
+
 func (p *AdminAccountPlugin) Name() string    { return "admin_account" }
 func (p *AdminAccountPlugin) Version() string { return version }
 
@@ -185,10 +228,20 @@ func (p *AdminAccountPlugin) Init(ctx PluginContext) error {
 	p.emit = ctx.Emit
 	p.broadcast = ctx.Broadcast
 	p.isOnline = ctx.IsOnline
+	p.sessionTTL = readSessionTTL(ctx.Config)
+	p.adminAPIKey = ctx.Config["ADMIN_API_KEY"]
+	p.runtimeAddr = ctx.Config["RUNTIME_ADDR"]
+	p.rdb = newRedisClient(ctx.Config)
 	// 仅登录模块需要：把鉴权回调注册给 runtime；普通业务模块这一行可删
 	p.registerAuthIfLoginModule(ctx)
-	p.logger.Info("插件初始化", "name", p.Name(), "version", p.Version())
 	// 建表、读 config；不要建 mux 或注册路由
+	if err := p.initStorage(ctx.LifecycleCtx); err != nil {
+		return err
+	}
+	if p.logger == nil {
+		p.logger = slog.Default()
+	}
+	p.logger.Info("插件初始化", "name", p.Name(), "version", p.Version())
 	// 后台 worker 启动示例（见文件顶部 PluginContext 注释）：
 	//   go p.runTicker()
 	return nil
@@ -216,6 +269,46 @@ func (p *AdminAccountPlugin) handleHello(w http.ResponseWriter, r *http.Request)
 
 func (p *AdminAccountPlugin) handleAdminPing(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 0, nil, "pong")
+}
+
+func readSessionTTL(config map[string]string) time.Duration {
+	raw := "28800"
+	if config != nil && config["ADMIN_ACCOUNTS_SESSION_TTL_SECONDS"] != "" {
+		raw = config["ADMIN_ACCOUNTS_SESSION_TTL_SECONDS"]
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds <= 0 {
+		seconds = 28800
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func newRedisClient(config map[string]string) *redis.Client {
+	if config == nil {
+		return nil
+	}
+	host := config["REDIS_HOST_LAN"]
+	if host == "" {
+		host = config["REDIS_HOST_WG"]
+	}
+	if host == "" {
+		return nil
+	}
+	port := config["REDIS_PORT"]
+	if port == "" {
+		port = "6379"
+	}
+	db := 0
+	if rawDB := config["REDIS_DB"]; rawDB != "" {
+		if parsed, err := strconv.Atoi(rawDB); err == nil && parsed >= 0 {
+			db = parsed
+		}
+	}
+	return redis.NewClient(&redis.Options{
+		Addr:     host + ":" + port,
+		Password: config["REDIS_PASSWORD"],
+		DB:       db,
+	})
 }
 
 // ========== 用户认证工具 ==========
