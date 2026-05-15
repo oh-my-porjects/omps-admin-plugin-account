@@ -1,4 +1,4 @@
-module github.com/oh-my-porjects/myanmarGames---admin_account
+module github.com/oh-my-porjects/omps-admin-plugin-account
 
 go 1.25.0
 
