@@ -49,7 +49,7 @@ func (p *AdminAccountPlugin) initStorage(ctx context.Context) error {
 		// 项目级唯一一条 is_temporary=true 的记录，初始 disabled
 		// admin-server 调 _create-temporary-admin 接口时只重置 account/password_hash/status/expires_at，ID 永远不变
 		`INSERT INTO account_accounts (id, account, password_hash, status, is_super_admin, is_temporary)
-		 VALUES ('00000000TmAd', '__temporary_super_admin_seed__', '', 'disabled', TRUE, TRUE)
+		 VALUES ('AccTmpAdm001', '__temporary_super_admin_seed__', '', 'disabled', TRUE, TRUE)
 		 ON CONFLICT (id) DO NOTHING`,
 	} {
 		if _, err := p.db.ExecContext(ctx, stmt); err != nil {

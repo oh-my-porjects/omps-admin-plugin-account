@@ -35,14 +35,13 @@ type accountResponse struct {
 	UpdatedAt    string   `json:"updated_at"`
 }
 
-// 平台短 ID 标准：12 字符 base62
-// 系统预设 ID 命名：开头 8 个 0 + 4 字符语义后缀
-// rootRoleID / rootPermID / supportRoleID 跟 role 公共模块对齐
+// 平台短 ID 标准 12 字符 base62, 语义前缀让 UI 缩短显示也能区分
+// rootRoleID / rootPermID / supportRoleID 必须跟 role/permission 公共模块对齐
 const (
-	rootAccountID     = "00000000RtAc"
+	rootAccountID     = "AccRoot00001"
 	rootUsername      = "root"
-	operatorAccountID = "00000000OpAc"
-	rootRoleID        = "00000000Root"
-	supportRoleID     = "00000000Supp"
-	rootPermID        = "00000000SysP"
+	operatorAccountID = "AccOper00001"
+	rootRoleID        = "RoleRoot0001"
+	supportRoleID     = "RoleSupp0001"
+	rootPermID        = "PermSysMan01"
 )
