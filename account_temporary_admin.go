@@ -25,8 +25,8 @@ import (
 )
 
 // 固定的临时超管账号 ID（跟 account_storage.go init 时的种子记录对齐）
-// 12 字符 base62 短 ID，AccTmpAdm001 = Account Temporary Admin
-const temporarySuperAdminSeedID = "AccTmpAdm001"
+// 12 字符 base62 短 ID，前 8 位 AccountT 独立可识别
+const temporarySuperAdminSeedID = "AccountTmp01"
 
 // 临时账号 TTL（10 分钟）
 const temporaryAdminTTL = 10 * time.Minute
