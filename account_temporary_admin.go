@@ -73,11 +73,42 @@ func (p *AdminAccountPlugin) handleCreateTemporaryAdmin(w http.ResponseWriter, r
 
 	expiresAt := time.Now().Add(temporaryAdminTTL)
 
-	// 重置种子记录的字段，ID 由 PG 随机生成不变
-	// status 从可能的 disabled 解开为 enabled
-	// account 字段加随机后缀防 UNIQUE 冲突（旧值在表里，新值覆盖必须不冲突）
-	// 通过 is_temporary=true 业务字段定位种子记录（项目级唯一）
-	_, err = p.db.ExecContext(ctx, `
+	// 重置种子记录（项目级唯一），ID 由 PG 随机生成不变。
+	// 历史 bug：原 UPDATE 用 account = '__temporary_super_admin_seed__' OR account = $1 OR account LIKE 'tmp_admin_%'
+	// 定位 seed。第一次调用后 account 被改成 8 hex，再调 WHERE 不命中，接口
+	// 返回 status=0 但 0 rows affected — 静默失败。
+	//
+	// 修复思路：
+	//   1. 先清掉多余的历史临时账号（保留 created_at 最早的一条作为 seed）
+	//   2. 如果一条都没有（DB 被手动清过），重新种一条 seed
+	//   3. UPDATE 仅按 is_temporary=TRUE 定位，不依赖 account 字段值
+	//   4. 校验 RowsAffected，0 行就明确报错，不再静默
+
+	// 1. 清掉多余的临时账号，保留最早创建的那条
+	if _, err = p.db.ExecContext(ctx, `
+		DELETE FROM account_accounts
+		 WHERE is_temporary = TRUE
+		   AND id NOT IN (
+		     SELECT id FROM account_accounts WHERE is_temporary = TRUE ORDER BY created_at LIMIT 1
+		   )
+	`); err != nil {
+		writeJSON(w, 2404, nil, "清理多余临时账号失败: "+err.Error())
+		return
+	}
+
+	// 2. 极端情况兜底：表里没有 is_temporary 记录时重新种一条
+	if _, err = p.db.ExecContext(ctx, `
+		INSERT INTO account_accounts (account, password_hash, status, is_super_admin, is_temporary)
+		SELECT '__temporary_super_admin_seed__', '', 'disabled', TRUE, TRUE
+		 WHERE NOT EXISTS (SELECT 1 FROM account_accounts WHERE is_temporary = TRUE)
+		ON CONFLICT (account) DO NOTHING
+	`); err != nil {
+		writeJSON(w, 2404, nil, "种子记录补建失败: "+err.Error())
+		return
+	}
+
+	// 3. UPDATE 那条 seed 记录
+	res, err := p.db.ExecContext(ctx, `
 		UPDATE account_accounts
 		   SET account = $1,
 		       password_hash = $2,
@@ -85,10 +116,13 @@ func (p *AdminAccountPlugin) handleCreateTemporaryAdmin(w http.ResponseWriter, r
 		       expires_at = $3,
 		       updated_at = now()
 		 WHERE is_temporary = TRUE
-		   AND (account = '__temporary_super_admin_seed__' OR account = $1 OR account LIKE 'tmp_admin_%')
 	`, newAccount, passwordHash, expiresAt)
 	if err != nil {
 		writeJSON(w, 2404, nil, "更新临时超管账号失败: "+err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeJSON(w, 2405, nil, "种子记录定位失败,0 rows affected")
 		return
 	}
 

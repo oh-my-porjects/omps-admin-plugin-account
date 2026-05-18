@@ -47,10 +47,13 @@ func (p *AdminAccountPlugin) initStorage(ctx context.Context) error {
 		)`,
 		// 临时超管账号种子记录（task/inner_plugin.md §4.4 § §6.1）
 		// 项目级唯一一条 is_temporary=true 的记录，初始 disabled
-		// ID 由 generate_short_id() 真随机生成，业务代码通过 account = '__temporary_super_admin_seed__'
-		// 或 is_temporary=true 标记查找此 seed 记录（不依赖硬编码 ID 常量）
+		// 业务代码通过 is_temporary=TRUE 业务字段定位 seed，不依赖 account 字段值
+		// 历史 bug：用 ON CONFLICT (account) DO NOTHING 在 seed account 被改成
+		// 8 hex 之后不再冲突，每次模块重启都 INSERT 一条新 seed，累积出多条
+		// is_temporary 记录。改用 NOT EXISTS 保证表里只插一条 seed
 		`INSERT INTO account_accounts (account, password_hash, status, is_super_admin, is_temporary)
-		 VALUES ('__temporary_super_admin_seed__', '', 'disabled', TRUE, TRUE)
+		 SELECT '__temporary_super_admin_seed__', '', 'disabled', TRUE, TRUE
+		  WHERE NOT EXISTS (SELECT 1 FROM account_accounts WHERE is_temporary = TRUE)
 		 ON CONFLICT (account) DO NOTHING`,
 	} {
 		if _, err := p.db.ExecContext(ctx, stmt); err != nil {
